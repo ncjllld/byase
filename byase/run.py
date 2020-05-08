@@ -85,6 +85,8 @@ def _add_inference_parser(subparsers):
 
     parser.add_argument('-n', '--process', type=int, default=1, help='The number of processes used for '
                                                                      'parallel computing. (DEFAULT: 1)')
+    parser.add_argument('-C', '--n-mcmc', type=int, default=500, help='The number of MCMC samples. (DEFAULT: 500)')
+    parser.add_argument('-T', '--tune', type=int, default=500, help='The number of tune samples. (DEFAULT: 500)')
     parser.add_argument('-c', '--count', type=int, help='The count of tasks to be inferred. '
                                                         'If not specified, inference will be done on all tasks.')
 

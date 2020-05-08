@@ -52,8 +52,10 @@ class _ObservedDistribution(pm.Continuous):
 class TaskInference(TaskAlign):
     """Task inference."""
 
-    def __init__(self, task: Task, bam_param: BAMParam, mc: MessageCenter):
+    def __init__(self, task: Task, bam_param: BAMParam, mcmc_samples: int, tune_samples: int, mc: MessageCenter):
         super().__init__(task, bam_param, mc)
+        self.mcmc_samples = mcmc_samples
+        self.tune_samples = tune_samples
 
     @property
     def isoform_lens(self):
@@ -153,7 +155,7 @@ class TaskInference(TaskAlign):
             _ObservedDistribution(name='observed', _p=p_rescaled, observed=observed_data)
 
             # Inference.
-            trace = pm.sample(500, tune=500, chains=2, progressbar=False)
+            trace = pm.sample(self.mcmc_samples, tune=self.tune_samples, chains=1, progressbar=False)
 
         # Convert trace to data frame.
         trace = trace_to_dataframe(trace)

@@ -51,7 +51,7 @@ class InferenceParseError(InferenceError):
         super().__init__('[PARSE: {}] {}'.format(path, msg))
 
 
-def _inference_task(task_id: str, anno_path: str, bam_param: BAMParam, q: Queue):
+def _inference_task(task_id: str, anno_path: str, bam_param: BAMParam, mcmc_samples: int, tune_samples: int, q: Queue):
     """Inference for task."""
     os.environ['OMP_NUM_THREADS'] = '1'
 
@@ -65,7 +65,7 @@ def _inference_task(task_id: str, anno_path: str, bam_param: BAMParam, q: Queue)
 
     error = None
     try:
-        task_inference = TaskInference(task, bam_param, mc)
+        task_inference = TaskInference(task, bam_param, mcmc_samples, tune_samples, mc)
         fragments_count, trace = task_inference.run()
         task_result = TaskResult(task, trace)
         stats = task_result.stats()
@@ -83,8 +83,8 @@ def _inference_task(task_id: str, anno_path: str, bam_param: BAMParam, q: Queue)
     q.put(record)
 
 
-def _handle_tasks(num: int, anno_path: str, bam_param: BAMParam, theano_cache_dir: str,
-                  in_queue: Queue, out_queue: Queue, mc: MessageCenter):
+def _handle_tasks(num: int, anno_path: str, bam_param: BAMParam, mcmc_samples: int, tune_samples: int,
+                  theano_cache_dir: str, in_queue: Queue, out_queue: Queue, mc: MessageCenter):
     """Handle tasks."""
     theano_cache_path = os.path.join(theano_cache_dir, str(num))
     os.environ['THEANO_FLAGS'] = 'base_compiledir={}'.format(theano_cache_path)
@@ -102,7 +102,7 @@ def _handle_tasks(num: int, anno_path: str, bam_param: BAMParam, theano_cache_di
         mc.handle_progress('[PROCESS {}] Inference for task: [{}]...'.format(num, task_id))
         mc.handle_data(('process_start', task_id))
 
-        proc = Process(target=_inference_task, args=(task_id, anno_path, bam_param, q))
+        proc = Process(target=_inference_task, args=(task_id, anno_path, bam_param, mcmc_samples, tune_samples, q))
         proc.start()
         out_queue.put(q.get())
         proc.join()
@@ -132,6 +132,8 @@ def _store_result_record(result_path: str, record: ResultRecord):
 class InferenceParam(NamedTuple):
     anno_path: str
     bam_param: BAMParam
+    mcmc_samples_count: int
+    tune_samples_count: int
 
 
 class InferenceTool:
@@ -169,6 +171,8 @@ class InferenceTool:
                 raise InferencePathError(path, 'The BAM file not exists.')
 
         self.mc.log_debug('n_process: {}'.format(self.n_process))
+        self.mc.log_debug('mcmc_samples: {}'.format(self.param.mcmc_samples_count))
+        self.mc.log_debug('tune_samples: {}'.format(self.param.tune_samples_count))
         self.mc.log_debug('out_dir: {}'.format(self.out_dir))
         self.mc.log_debug('anno_path: {}'.format(self.anno_path))
         self.mc.log_debug('bam_paths: {}'.format(self.bam_param.paths))
@@ -228,6 +232,8 @@ class InferenceTool:
         bp = self.bam_param
         data = [('Annotation', os.path.relpath(self.anno_path, self.out_dir)),
                 ('BAM', ';'.join([os.path.relpath(path, self.out_dir) for path in bp.paths])),
+                ('MCMC-samples', self.param.mcmc_samples_count),
+                ('Tune-samples', self.param.tune_samples_count),
                 ('Read-len', bp.read_len)]
         if bp.paired_end:
             data.append(('Paired-end', '{};{}'.format(bp.insert_size_mean, bp.insert_size_std)))
@@ -241,6 +247,7 @@ class InferenceTool:
             raise InferencePathError(self.param_path, 'The inference parameters file not exists.')
 
         anno_path, bam_paths, read_len = None, None, None
+        mcmc_samples_count, tune_samples_count = None, None
         paired_end, insert_size_mean, insert_size_std = False, None, None
 
         with open(self.param_path) as f:
@@ -251,6 +258,10 @@ class InferenceTool:
                     anno_path = os.path.join(self.out_dir, v)
                 elif k == 'BAM':
                     bam_paths = [os.path.join(self.out_dir, path) for path in v.split(';')]
+                elif k == 'MCMC-samples':
+                    mcmc_samples_count = int(v)
+                elif k == 'Tune-samples':
+                    tune_samples_count = int(v)
                 elif k == 'Read-len':
                     read_len = int(v)
                 elif k == 'Paired-end':
@@ -264,7 +275,8 @@ class InferenceTool:
         bam_param = BAMParam(bam_paths=bam_paths, read_len=read_len, paired_end=paired_end,
                              insert_size_mean=insert_size_mean, insert_size_std=insert_size_std)
 
-        return InferenceParam(anno_path=anno_path, bam_param=bam_param)
+        return InferenceParam(anno_path=anno_path, bam_param=bam_param,
+                              mcmc_samples_count=mcmc_samples_count, tune_samples_count=tune_samples_count)
 
     def _store_tmp_result_records(self, records_queue: Queue):
         """Store tmp result records."""
@@ -332,7 +344,10 @@ class InferenceTool:
 
         procs = [Process(target=_dispatch_tasks, args=(task_ids, self.n_process, in_queue))]
         for i in range(self.n_process):
-            procs.append(Process(target=_handle_tasks, args=(i, self.anno_path, self.bam_param, self.theano_cache_dir,
+            procs.append(Process(target=_handle_tasks, args=(i, self.anno_path, self.bam_param,
+                                                             self.param.mcmc_samples_count,
+                                                             self.param.tune_samples_count,
+                                                             self.theano_cache_dir,
                                                              in_queue, out_queue, self.mc)))
 
         for proc in procs:
@@ -363,13 +378,18 @@ def inference(args):
     out_dir = args['out_dir']
 
     n_process = args['process']
+
+    mcmc_samples_count = args['n_mcmc']
+    tune_samples_count = args['tune']
+
     target_count = args['count']
 
     mc = args['mc']
 
     bam_param = BAMParam(bam_paths=bam_paths, read_len=read_len, paired_end=paired_end,
                          insert_size_mean=insert_size_mean, insert_size_std=insert_size_std)
-    param = InferenceParam(anno_path=anno_path, bam_param=bam_param)
+    param = InferenceParam(anno_path=anno_path, bam_param=bam_param,
+                           mcmc_samples_count=mcmc_samples_count, tune_samples_count=tune_samples_count)
 
     inference_tool = InferenceTool(out_dir=out_dir, n_process=n_process, param=param, mc=mc)
     inference_tool.run(target_count)
