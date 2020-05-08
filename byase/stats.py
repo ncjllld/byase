@@ -80,6 +80,10 @@ class StatsTool(TaskResultMeta):
         gene_d = [[] for _ in gene_cols]
         iso_d = [[] for _ in iso_cols]
 
+        def _add_mean(_data: list, _record: ResultRecord, _var_name: str):
+            _var_stats = _record.trace_stats.loc[_var_name]
+            _data.append(_var_stats['mean'])
+
         def _add_mean_and_hpd_width(_data: list, _record: ResultRecord, _var_name: str):
             _var_stats = _record.trace_stats.loc[_var_name]
             _data.append(_var_stats['mean'])
@@ -100,6 +104,11 @@ class StatsTool(TaskResultMeta):
 
                 if ploidy is None:
                     ploidy = task.ploidy
+                    for i in range(ploidy):
+                        for cols, d in [(gene_cols, gene_d),
+                                        (iso_cols, iso_d)]:
+                            cols.append('Allele {} Expression Mean'.format(i+1))
+                            d.append([])
                     for i, j in self.delta_iterator(ploidy):
                         for cols, d in [(gene_cols, gene_d),
                                         (iso_cols, iso_d)]:
@@ -118,6 +127,9 @@ class StatsTool(TaskResultMeta):
                 seg = task.segment
                 location = '{}:{}-{}'.format(seg.iv.chrom, seg.iv.start, seg.iv.end)
                 gene_row = [task.id, seg.id, seg.gene_name, location, seg.isoforms_count, len(task.snps)]
+                for i in range(ploidy):
+                    var = self.get_var_expression(allele_num=i)
+                    _add_mean(gene_row, record, var)
                 for i, j in self.delta_iterator(ploidy):
                     var = self.get_var_diff_expression(allele_num1=i, allele_num2=j)
                     _add_mean_and_hpd_width(gene_row, record, var)
@@ -127,6 +139,9 @@ class StatsTool(TaskResultMeta):
                     location = '{}:{}-{}'.format(iso.iv.chrom, iso.iv.start, iso.iv.end)
                     iso_row = [task.id, iso.id, seg.id, seg.gene_name, iso_num + 1, iso.name,
                                location, len(task.isoform_snps(iso_num))]
+                    for i in range(ploidy):
+                        var = self.get_var_expression(allele_num=i, iso_num=iso_num)
+                        _add_mean(iso_row, record, var)
                     for i, j in self.delta_iterator(ploidy):
                         var = self.get_var_diff_expression(allele_num1=i, allele_num2=j, iso_num=iso_num)
                         _add_mean_and_hpd_width(iso_row, record, var)

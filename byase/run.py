@@ -18,6 +18,7 @@
 
 import argparse
 import warnings
+import traceback
 
 from .message import MessageCenter
 
@@ -170,3 +171,4 @@ def main():
 
     except Exception as e:
         mc.log_error(e)
+        traceback.print_exc()
