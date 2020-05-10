@@ -379,8 +379,12 @@ def inference(args):
 
     n_process = args['process']
 
-    mcmc_samples_count = args['n_mcmc']
-    tune_samples_count = args['tune']
+    mcmc_samples_count = 500
+    tune_samples_count = 500
+    if 'n_mcmc' in args:
+        mcmc_samples_count = args['n_mcmc']
+    if 'tune' in args:
+        tune_samples_count = args['tune']
 
     target_count = args['count']
 
