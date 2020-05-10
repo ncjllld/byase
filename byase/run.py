@@ -108,6 +108,12 @@ def _add_stats_parser(subparsers):
     parser.add_argument('-d', '--result-dir', required=True, help='The paths of result directory.')
 
 
+def _add_trace_parser(subparsers):
+    parser = subparsers.add_parser('trace', help='Retrieve MCMC traces of a task.')
+    parser.add_argument('-d', '--result-dir', required=True, help='The paths of result directory.')
+    parser.add_argument('-i', '--task-id', required=True, help='The ID of the task.')
+
+
 def _add_plot_parser(subparsers):
     parser = subparsers.add_parser('plot', help='Plot.')
 
@@ -125,6 +131,7 @@ def _parse_args():
     _add_inference_parser(subparsers)
     _add_inference_resume_parser(subparsers)
     _add_stats_parser(subparsers)
+    _add_trace_parser(subparsers)
     _add_plot_parser(subparsers)
 
     args = parser.parse_args()
@@ -166,6 +173,10 @@ def main():
         elif sub_command == 'stats':
             from .stats import stats
             stats(args)
+
+        elif sub_command == 'trace':
+            from .stats import trace
+            trace(args)
 
         elif sub_command == 'plot':
             from .plot import plot_task

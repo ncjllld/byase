@@ -25,10 +25,11 @@ from .message import MessageCenter
 from .inference import InferenceTool
 from .annotation import AnnotationDB
 from .result import ResultDB, ResultRecord
-from .task.result import TaskResultMeta
+from .task.result import TaskResult, TaskResultMeta
 
 
 _STATS_DIR_NAME = 'stats'
+_TRACE_DIR_NAME = 'trace'
 _HEAD_MEAN = 'Mean'
 _HEAD_HPD_WIDTH = '95% HPD Width'
 
@@ -96,7 +97,7 @@ class StatsTool(TaskResultMeta):
 
         n = -1
         ploidy = None
-        with AnnotationDB(self.anno_path)as anno_db, ResultDB(self.result_path) as result_db:
+        with AnnotationDB(self.anno_path) as anno_db, ResultDB(self.result_path) as result_db:
             for task in anno_db.tasks_iterator():
                 record = result_db.get_record(task.id)
                 if not record.success:
@@ -188,3 +189,30 @@ def stats(args):
     stats_tool = StatsTool(anno_path=inference_tool.anno_path, result_path=inference_tool.result_path,
                            out_dir=stats_dir, mc=mc)
     return stats_tool.stats()
+
+
+def trace(args):
+    """Get MCMC traces."""
+    result_dir = args['result_dir']
+    task_id = args['task_id']
+
+    mc = args['mc']  # type: MessageCenter
+
+    mc.log_debug('result_dir: {}'.format(result_dir))
+    mc.log_debug('task_id: {}'.format(task_id))
+
+    trace_dir = os.path.join(result_dir, _TRACE_DIR_NAME)
+    if not os.path.exists(trace_dir):
+        os.mkdir(trace_dir)
+
+    out_path = os.path.join(trace_dir, '{}.csv'.format(task_id))
+
+    inference_tool = InferenceTool(result_dir, n_process=1, param=None, mc=mc)
+    anno_path = inference_tool.anno_path
+    result_path = inference_tool.result_path
+
+    with AnnotationDB(anno_path) as anno_db, ResultDB(result_path) as result_db:
+        task = anno_db.get_task(task_id)
+        record = result_db.get_record(task_id)
+        result = TaskResult(task, record.trace)
+        result.trace.to_csv(out_path, index=False)
